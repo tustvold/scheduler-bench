@@ -1,0 +1,13 @@
+[package]
+name = "scheduler-bench"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+arrow = "11.0"
+parquet = { version = "11.0", features = ["async"] }
+tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "sync", "fs"] }
+futures = "0.3"
