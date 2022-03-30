@@ -9,7 +9,7 @@ select string_optional from t where dict_10_required = 'prefix#1' and dict_1000_
 
 ## Setup:
 1. Install git-lfs
-2. Run `git lfs pull` to pull files
+2. Run `git lfs pull` to pull files (not needed if LFS was installed prior to checking out the repo)
 3. Run with `cargo run --release`
 
 
