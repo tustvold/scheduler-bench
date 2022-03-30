@@ -60,6 +60,11 @@ fn main() {
             format_args!("tokio_par_async_test ({})", batch_size),
             tokio_par_async_test(batch_size, runtime.handle().clone()),
         );
+
+        bench(
+            format_args!("tokio_par_sync_test ({})", batch_size),
+            tokio_par_sync_test(batch_size, runtime.handle().clone()),
+        );
     }
 }
 
@@ -277,6 +282,29 @@ fn tokio_par_async_test(batch_size: usize, handle: Handle) -> impl FnMut() {
             let t1 = tokio::task::spawn(async move {
                 let mut reader = async_reader(batch_size).await;
                 while let Some(maybe_batch) = reader.next().await {
+                    sender.send(maybe_batch.unwrap()).await.unwrap()
+                }
+            });
+
+            let mut count = 0;
+            while let Some(batch) = receiver.recv().await {
+                count += filter_batch(batch).len()
+            }
+            assert_eq!(count, 210);
+
+            t1.await.unwrap();
+        })
+    }
+}
+
+fn tokio_par_sync_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+    move || {
+        handle.block_on(async move {
+            let (sender, mut receiver) = tokio::sync::mpsc::channel(10);
+            let t1 = tokio::task::spawn(async move {
+                let file = File::open("test.parquet").unwrap();
+                let reader = sync_reader(batch_size, file);
+                for maybe_batch in reader {
                     sender.send(maybe_batch.unwrap()).await.unwrap()
                 }
             });
