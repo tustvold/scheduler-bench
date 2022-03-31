@@ -6,11 +6,12 @@ use parquet::arrow::async_reader::ParquetRecordBatchStream;
 use parquet::arrow::{ArrowReader, ParquetFileArrowReader, ParquetRecordBatchStreamBuilder};
 use parquet::file::reader::{ChunkReader, SerializedFileReader};
 use parquet::file::serialized_reader::SliceableCursor;
+use statrs::statistics::{Data, Distribution, Max, Min, OrderStatistics};
 use std::fmt::Display;
 use std::fs::File;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::runtime::Handle;
 
 const DICT_10_REQUIRED_IDX: usize = 0;
@@ -69,24 +70,23 @@ fn main() {
 }
 
 fn bench(name: impl Display, mut f: impl FnMut()) {
-    const SAMPLE_COUNT: usize = 100;
+    const SAMPLE_COUNT: usize = 1000;
     let mut elapsed = Vec::with_capacity(SAMPLE_COUNT);
     for _ in 0..SAMPLE_COUNT {
         let start = Instant::now();
         f();
-        elapsed.push(start.elapsed());
+        elapsed.push(start.elapsed().as_secs_f64());
     }
 
-    let min = elapsed.iter().min().unwrap();
-    let max = elapsed.iter().max().unwrap();
-    let sum = elapsed.iter().sum::<Duration>();
+    let mut data = Data::new(elapsed);
 
     println!(
-        "{}: min: {:.4}s, max: {:.4}s, avg: {:.4}s",
+        "{}: min: {:.4}s, max: {:.4}s, avg: {:.4}s, p95: {:.4}s",
         name,
-        min.as_secs_f64(),
-        max.as_secs_f64(),
-        sum.as_secs_f64() / elapsed.len() as f64
+        data.min(),
+        data.max(),
+        data.mean().unwrap(),
+        data.percentile(95),
     );
 }
 
