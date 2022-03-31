@@ -2,7 +2,7 @@ use arrow::array::{Array, ArrayRef};
 use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
-use parquet::arrow::async_reader::ParquetRecordBatchStream;
+use parquet::arrow::async_reader::{FileStorage, ParquetRecordBatchStream, Storage};
 use parquet::arrow::{ArrowReader, ParquetFileArrowReader, ParquetRecordBatchStreamBuilder};
 use parquet::file::reader::{ChunkReader, SerializedFileReader};
 use parquet::file::serialized_reader::SliceableCursor;
@@ -19,7 +19,8 @@ const DICT_1000_REQUIRED_IDX: usize = 4;
 const STRING_OPTIONAL_IDX: usize = 7;
 
 fn main() {
-    let batch_sizes = [1024, 2048, 4096, 8192, 16384];
+    //let batch_sizes = [1024, 2048, 4096, 8192, 16384];
+    let batch_sizes = [2048];
     let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
 
     for batch_size in batch_sizes {
@@ -27,35 +28,35 @@ fn main() {
             format_args!("sync_file_test ({})", batch_size),
             sync_file_test(batch_size),
         );
+        //
+        // bench(
+        //     format_args!("sync_mem_test ({})", batch_size),
+        //     sync_mem_test(batch_size),
+        // );
 
-        bench(
-            format_args!("sync_mem_test ({})", batch_size),
-            sync_mem_test(batch_size),
-        );
-
-        let (f, handle) = par_sync_file_test(batch_size);
-        bench(format_args!("par_sync_file_test ({})", batch_size), f);
-        handle.join().unwrap();
+        // let (f, handle) = par_sync_file_test(batch_size);
+        // bench(format_args!("par_sync_file_test ({})", batch_size), f);
+        // handle.join().unwrap();
 
         bench(
             format_args!("tokio_sync_file_test ({})", batch_size),
             tokio_sync_file_test(batch_size, runtime.handle().clone()),
         );
 
-        bench(
-            format_args!("tokio_spawn_file_test ({})", batch_size),
-            tokio_spawn_file_test(batch_size, runtime.handle().clone()),
-        );
-
-        bench(
-            format_args!("tokio_spawn_file_buffer_test ({})", batch_size),
-            tokio_spawn_file_buffer_test(batch_size, runtime.handle().clone()),
-        );
-
-        bench(
-            format_args!("tokio_async_test ({})", batch_size),
-            tokio_async_test(batch_size, runtime.handle().clone()),
-        );
+        // bench(
+        //     format_args!("tokio_spawn_file_test ({})", batch_size),
+        //     tokio_spawn_file_test(batch_size, runtime.handle().clone()),
+        // );
+        //
+        // bench(
+        //     format_args!("tokio_spawn_file_buffer_test ({})", batch_size),
+        //     tokio_spawn_file_buffer_test(batch_size, runtime.handle().clone()),
+        // );
+        //
+        // bench(
+        //     format_args!("tokio_async_test ({})", batch_size),
+        //     tokio_async_test(batch_size, runtime.handle().clone()),
+        // );
 
         bench(
             format_args!("tokio_par_async_test ({})", batch_size),
@@ -246,8 +247,8 @@ fn tokio_spawn_file_buffer_test(batch_size: usize, handle: Handle) -> impl FnMut
     }
 }
 
-async fn async_reader(batch_size: usize) -> ParquetRecordBatchStream<tokio::fs::File> {
-    let file = tokio::fs::File::open("test.parquet").await.unwrap();
+async fn async_reader(batch_size: usize) -> ParquetRecordBatchStream<FileStorage> {
+    let file = FileStorage::new(File::open("test.parquet").unwrap());
     ParquetRecordBatchStreamBuilder::new(file)
         .await
         .unwrap()
@@ -258,6 +259,7 @@ async fn async_reader(batch_size: usize) -> ParquetRecordBatchStream<tokio::fs::
             STRING_OPTIONAL_IDX,
         ])
         .build()
+        .await
         .unwrap()
 }
 
