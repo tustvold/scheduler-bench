@@ -31,39 +31,44 @@ fn main() {
         .unwrap();
 
     for batch_size in batch_sizes {
-        // bench(
-        //     format_args!("sync_file_test ({})", batch_size),
-        //     sync_file_test(batch_size),
-        // );
-        //
-        // bench(
-        //     format_args!("sync_mem_test ({})", batch_size),
-        //     sync_mem_test(batch_size),
-        // );
-        //
-        // let (f, handle) = par_sync_file_test(batch_size);
-        // bench(format_args!("par_sync_file_test ({})", batch_size), f);
-        // handle.join().unwrap();
-        //
+        bench(
+            format_args!("sync_file_test ({})", batch_size),
+            sync_file_test(batch_size),
+        );
+
+        bench(
+            format_args!("sync_mem_test ({})", batch_size),
+            sync_mem_test(batch_size),
+        );
+
+        let (f, handle) = par_sync_file_test(batch_size);
+        bench(format_args!("par_sync_file_test ({})", batch_size), f);
+        handle.join().unwrap();
+
         bench(
             format_args!("tokio_sync_file_test ({})", batch_size),
             tokio_sync_file_test(batch_size, &runtime),
         );
-        //
-        // bench(
-        //     format_args!("tokio_spawn_file_test ({})", batch_size),
-        //     tokio_spawn_file_test(batch_size, &runtime),
-        // );
-        //
-        // bench(
-        //     format_args!("tokio_spawn_file_buffer_test ({})", batch_size),
-        //     tokio_spawn_file_buffer_test(batch_size, &runtime),
-        // );
-        //
-        // bench(
-        //     format_args!("tokio_async_test ({})", batch_size),
-        //     tokio_async_test(batch_size, &runtime),
-        // );
+
+        bench(
+            format_args!("tokio_spawn_file_test ({})", batch_size),
+            tokio_spawn_file_test(batch_size, &runtime),
+        );
+
+        bench(
+            format_args!("tokio_spawn_file_buffer_test ({})", batch_size),
+            tokio_spawn_file_buffer_test(batch_size, &runtime),
+        );
+
+        bench(
+            format_args!("tokio_async_spawn_blocking_test ({})", batch_size),
+            tokio_async_test(batch_size, &runtime, true),
+        );
+
+        bench(
+            format_args!("tokio_async_blocking_test ({})", batch_size),
+            tokio_async_test(batch_size, &runtime, false),
+        );
 
         bench(
             format_args!("tokio_par_async_spawn_blocking_test ({})", batch_size),
