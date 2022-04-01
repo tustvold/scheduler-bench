@@ -306,58 +306,58 @@ fn tokio_par_async_test(
         runtime.block_on(async move {
             let (sender, mut receiver) = tokio::sync::mpsc::channel(10);
             let t1 = tokio::task::spawn(async move {
-                let mut reader_durations = Vec::with_capacity(1024);
+                // let mut reader_durations = Vec::with_capacity(1024);
 
-                let start = Instant::now();
-                let mut last_instant = start;
+                // let start = Instant::now();
+                // let mut last_instant = start;
 
                 let mut reader = async_reader(batch_size, spawn_blocking).await;
                 while let Some(maybe_batch) = reader.next().await {
-                    let a = Instant::now();
-                    reader_durations.push(a.duration_since(last_instant));
-                    last_instant = a;
+                    // let a = Instant::now();
+                    // reader_durations.push(a.duration_since(last_instant));
+                    // last_instant = a;
 
                     sender.send(maybe_batch.unwrap()).await.unwrap()
                 }
 
-                let reader_total = reader_durations.iter().sum::<Duration>();
-                let reader_max = reader_durations.iter().max().unwrap();
-                let reader_min = reader_durations.iter().min().unwrap();
+                // let reader_total = reader_durations.iter().sum::<Duration>();
+                // let reader_max = reader_durations.iter().max().unwrap();
+                // let reader_min = reader_durations.iter().min().unwrap();
 
-                println!(
-                    "Read completed in {}, reader sum: {}, reader min: {}, reader max: {}",
-                    start.elapsed().as_secs_f64(),
-                    reader_total.as_secs_f64(),
-                    reader_min.as_secs_f64(),
-                    reader_max.as_secs_f64()
-                );
+                // println!(
+                //     "Read completed in {}, reader sum: {}, reader min: {}, reader max: {}",
+                //     start.elapsed().as_secs_f64(),
+                //     reader_total.as_secs_f64(),
+                //     reader_min.as_secs_f64(),
+                //     reader_max.as_secs_f64()
+                // );
             });
 
-            let mut last_instant = Instant::now();
-            let mut filter_count = 0;
-            let mut max_delay = Duration::from_secs(0);
-            let mut max_filter = Duration::from_secs(0);
+            // let mut last_instant = Instant::now();
+            // let mut filter_count = 0;
+            // let mut max_delay = Duration::from_secs(0);
+            // let mut max_filter = Duration::from_secs(0);
 
             let mut count = 0;
             while let Some(batch) = receiver.recv().await {
-                filter_count += 1;
-                let a = Instant::now();
+                // filter_count += 1;
+                // let a = Instant::now();
 
                 count += filter_batch(batch).len();
 
-                let b = Instant::now();
-                max_delay = a.duration_since(last_instant);
-                max_filter = b.duration_since(a);
-                last_instant = b;
+                // let b = Instant::now();
+                // max_delay = a.duration_since(last_instant);
+                // max_filter = b.duration_since(a);
+                // last_instant = b;
             }
             assert_eq!(count, 210);
 
-            println!(
-                "count: {}, max delay: {}s, max filter: {}s",
-                filter_count,
-                max_delay.as_secs_f64(),
-                max_filter.as_secs_f64()
-            );
+            // println!(
+            //     "count: {}, max delay: {}s, max filter: {}s",
+            //     filter_count,
+            //     max_delay.as_secs_f64(),
+            //     max_filter.as_secs_f64()
+            // );
 
             t1.await.unwrap();
         })
