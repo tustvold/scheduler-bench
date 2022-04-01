@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 
-arrow = { path = "../../external/arrow-rs/arrow" }
-parquet = { path = "../../external/arrow-rs/parquet" , features = ["async"] }
-tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "sync", "fs"] }
+arrow = { git = "https://github.com/tustvold/arrow-rs.git", rev = "e1825cd5817f685f69585414cc175f96f9684ff3", package = "arrow" }
+parquet = { git = "https://github.com/tustvold/arrow-rs.git", rev = "e1825cd5817f685f69585414cc175f96f9684ff3", package = "parquet", features = ["async"] }
+tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "sync", "fs", "time"] }
 futures = "0.3"
 statrs = "0.15"
+tikv-jemallocator = "0.4.0"

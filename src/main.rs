@@ -2,7 +2,7 @@ use arrow::array::{Array, ArrayRef};
 use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
-use parquet::arrow::async_reader::{FileStorage, ParquetRecordBatchStream, Storage};
+use parquet::arrow::async_reader::{FileStorage, ParquetRecordBatchStream};
 use parquet::arrow::{ArrowReader, ParquetFileArrowReader, ParquetRecordBatchStreamBuilder};
 use parquet::file::reader::{ChunkReader, SerializedFileReader};
 use parquet::file::serialized_reader::SliceableCursor;
@@ -11,8 +11,12 @@ use std::fmt::Display;
 use std::fs::File;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Instant;
-use tokio::runtime::Handle;
+use std::time::{Duration, Instant};
+use tikv_jemallocator::Jemalloc;
+use tokio::runtime::Runtime;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 const DICT_10_REQUIRED_IDX: usize = 0;
 const DICT_1000_REQUIRED_IDX: usize = 4;
@@ -21,62 +25,71 @@ const STRING_OPTIONAL_IDX: usize = 7;
 fn main() {
     //let batch_sizes = [1024, 2048, 4096, 8192, 16384];
     let batch_sizes = [2048];
-    let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_time()
+        .build()
+        .unwrap();
 
     for batch_size in batch_sizes {
-        bench(
-            format_args!("sync_file_test ({})", batch_size),
-            sync_file_test(batch_size),
-        );
+        // bench(
+        //     format_args!("sync_file_test ({})", batch_size),
+        //     sync_file_test(batch_size),
+        // );
         //
         // bench(
         //     format_args!("sync_mem_test ({})", batch_size),
         //     sync_mem_test(batch_size),
         // );
-
+        //
         // let (f, handle) = par_sync_file_test(batch_size);
         // bench(format_args!("par_sync_file_test ({})", batch_size), f);
         // handle.join().unwrap();
-
+        //
         bench(
             format_args!("tokio_sync_file_test ({})", batch_size),
-            tokio_sync_file_test(batch_size, runtime.handle().clone()),
+            tokio_sync_file_test(batch_size, &runtime),
         );
-
+        //
         // bench(
         //     format_args!("tokio_spawn_file_test ({})", batch_size),
-        //     tokio_spawn_file_test(batch_size, runtime.handle().clone()),
+        //     tokio_spawn_file_test(batch_size, &runtime),
         // );
         //
         // bench(
         //     format_args!("tokio_spawn_file_buffer_test ({})", batch_size),
-        //     tokio_spawn_file_buffer_test(batch_size, runtime.handle().clone()),
+        //     tokio_spawn_file_buffer_test(batch_size, &runtime),
         // );
         //
         // bench(
         //     format_args!("tokio_async_test ({})", batch_size),
-        //     tokio_async_test(batch_size, runtime.handle().clone()),
+        //     tokio_async_test(batch_size, &runtime),
         // );
 
         bench(
-            format_args!("tokio_par_async_test ({})", batch_size),
-            tokio_par_async_test(batch_size, runtime.handle().clone()),
+            format_args!("tokio_par_async_spawn_blocking_test ({})", batch_size),
+            tokio_par_async_test(batch_size, &runtime, true),
+        );
+
+        bench(
+            format_args!("tokio_par_async_blocking_test ({})", batch_size),
+            tokio_par_async_test(batch_size, &runtime, false),
         );
 
         bench(
             format_args!("tokio_par_sync_test ({})", batch_size),
-            tokio_par_sync_test(batch_size, runtime.handle().clone()),
+            tokio_par_sync_test(batch_size, &runtime),
         );
     }
 }
 
 fn bench(name: impl Display, mut f: impl FnMut()) {
-    const SAMPLE_COUNT: usize = 1000;
+    const SAMPLE_COUNT: usize = 100;
     let mut elapsed = Vec::with_capacity(SAMPLE_COUNT);
     for _ in 0..SAMPLE_COUNT {
         let start = Instant::now();
         f();
-        elapsed.push(start.elapsed().as_secs_f64());
+        let duration = start.elapsed().as_secs_f64();
+        elapsed.push(duration);
     }
 
     let mut data = Data::new(elapsed);
@@ -183,11 +196,11 @@ fn par_sync_file_test(batch_size: usize) -> (impl FnMut(), JoinHandle<()>) {
     (bench, join)
 }
 
-fn tokio_sync_file_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_sync_file_test(batch_size: usize, runtime: &Runtime) -> impl FnMut() + '_ {
     let mut reader = arrow_reader(File::open("test.parquet").unwrap());
 
     move || {
-        handle.block_on(async {
+        runtime.block_on(async {
             let (sender, mut receiver) = tokio::sync::mpsc::channel(10);
             let reader = record_reader(batch_size, &mut reader);
 
@@ -209,11 +222,11 @@ fn tokio_sync_file_test(batch_size: usize, handle: Handle) -> impl FnMut() {
     }
 }
 
-fn tokio_spawn_file_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_spawn_file_test(batch_size: usize, runtime: &Runtime) -> impl FnMut() + '_ {
     let mut reader = arrow_reader(File::open("test.parquet").unwrap());
 
     move || {
-        handle.block_on(async {
+        runtime.block_on(async {
             let mut reader = record_reader(batch_size, &mut reader);
 
             let mut count = 0;
@@ -237,9 +250,9 @@ fn tokio_spawn_file_test(batch_size: usize, handle: Handle) -> impl FnMut() {
     }
 }
 
-fn tokio_spawn_file_buffer_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_spawn_file_buffer_test(batch_size: usize, runtime: &Runtime) -> impl FnMut() + '_ {
     move || {
-        handle.block_on(async {
+        runtime.block_on(async {
             let data = tokio::fs::read("test.parquet").await.unwrap();
             let reader = sync_reader(batch_size, SliceableCursor::new(data));
             sync_test(reader)
@@ -247,8 +260,11 @@ fn tokio_spawn_file_buffer_test(batch_size: usize, handle: Handle) -> impl FnMut
     }
 }
 
-async fn async_reader(batch_size: usize) -> ParquetRecordBatchStream<FileStorage> {
-    let file = FileStorage::new(File::open("test.parquet").unwrap());
+async fn async_reader(
+    batch_size: usize,
+    spawn_blocking: bool,
+) -> ParquetRecordBatchStream<FileStorage> {
+    let file = FileStorage::new(File::open("test.parquet").unwrap(), spawn_blocking);
     ParquetRecordBatchStreamBuilder::new(file)
         .await
         .unwrap()
@@ -263,10 +279,14 @@ async fn async_reader(batch_size: usize) -> ParquetRecordBatchStream<FileStorage
         .unwrap()
 }
 
-fn tokio_async_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_async_test(
+    batch_size: usize,
+    runtime: &Runtime,
+    spawn_blocking: bool,
+) -> impl FnMut() + '_ {
     move || {
-        handle.block_on(async move {
-            let mut reader = async_reader(batch_size).await;
+        runtime.block_on(async move {
+            let mut reader = async_reader(batch_size, spawn_blocking).await;
 
             let mut count = 0;
             while let Some(maybe_batch) = reader.next().await {
@@ -277,31 +297,76 @@ fn tokio_async_test(batch_size: usize, handle: Handle) -> impl FnMut() {
     }
 }
 
-fn tokio_par_async_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_par_async_test(
+    batch_size: usize,
+    runtime: &Runtime,
+    spawn_blocking: bool,
+) -> impl FnMut() + '_ {
     move || {
-        handle.block_on(async move {
+        runtime.block_on(async move {
             let (sender, mut receiver) = tokio::sync::mpsc::channel(10);
             let t1 = tokio::task::spawn(async move {
-                let mut reader = async_reader(batch_size).await;
+                let mut reader_durations = Vec::with_capacity(1024);
+
+                let start = Instant::now();
+                let mut last_instant = start;
+
+                let mut reader = async_reader(batch_size, spawn_blocking).await;
                 while let Some(maybe_batch) = reader.next().await {
+                    let a = Instant::now();
+                    reader_durations.push(a.duration_since(last_instant));
+                    last_instant = a;
+
                     sender.send(maybe_batch.unwrap()).await.unwrap()
                 }
+
+                let reader_total = reader_durations.iter().sum::<Duration>();
+                let reader_max = reader_durations.iter().max().unwrap();
+                let reader_min = reader_durations.iter().min().unwrap();
+
+                println!(
+                    "Read completed in {}, reader sum: {}, reader min: {}, reader max: {}",
+                    start.elapsed().as_secs_f64(),
+                    reader_total.as_secs_f64(),
+                    reader_min.as_secs_f64(),
+                    reader_max.as_secs_f64()
+                );
             });
+
+            let mut last_instant = Instant::now();
+            let mut filter_count = 0;
+            let mut max_delay = Duration::from_secs(0);
+            let mut max_filter = Duration::from_secs(0);
 
             let mut count = 0;
             while let Some(batch) = receiver.recv().await {
-                count += filter_batch(batch).len()
+                filter_count += 1;
+                let a = Instant::now();
+
+                count += filter_batch(batch).len();
+
+                let b = Instant::now();
+                max_delay = a.duration_since(last_instant);
+                max_filter = b.duration_since(a);
+                last_instant = b;
             }
             assert_eq!(count, 210);
+
+            println!(
+                "count: {}, max delay: {}s, max filter: {}s",
+                filter_count,
+                max_delay.as_secs_f64(),
+                max_filter.as_secs_f64()
+            );
 
             t1.await.unwrap();
         })
     }
 }
 
-fn tokio_par_sync_test(batch_size: usize, handle: Handle) -> impl FnMut() {
+fn tokio_par_sync_test(batch_size: usize, runtime: &Runtime) -> impl FnMut() + '_ {
     move || {
-        handle.block_on(async move {
+        runtime.block_on(async move {
             let (sender, mut receiver) = tokio::sync::mpsc::channel(10);
             let t1 = tokio::task::spawn(async move {
                 let file = File::open("test.parquet").unwrap();
